@@ -4,6 +4,8 @@
 100_Labs_Train_0.25Mask_L_V3/
 100_Labs_Train_0.25Mask_L_V4/
 demo/
+images/
+*.csv
 #*/
 
 # Don't ignore CSV files in the dictionary results
