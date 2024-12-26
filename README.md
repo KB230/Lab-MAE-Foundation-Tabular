@@ -82,25 +82,41 @@ To evaluate the performance of the trained MAE model, run:
 python run_test_mae.py
 ```
 
-This script will provide metrics such as Mean Absolute Error (MAE) and Root Mean Squared Error (RMSE) for the imputation task.
+This script will provide metrics such as Mean Absolute Error (MAE), Root Mean Squared Error (RMSE), and R2 for the imputation task.
 
 If you want to compare the performance of the MAE model with the XGBoost model, you can run the following scripts:
 
-- For the paper vs XGBoost models overall and per race:
+- For the MAE vs XGBoost models overall and per race:
 
 ```bash
 python run_test_mae_race.py
 ```
 
-- For the paper vs XGBoost models with follow-up data and without follow-up data:
+- For the MAE vs XGBoost models with follow-up data and without follow-up data:
 
 ```bash
 python run_test_mae_race_follow_up.py
 ```
 
-These scripts will output the MAE and RMSE for the MAE model and the XGBoost model, comparing the performance. To use the XGBoost model, you need to have the XGBoost model checkpoint files. You can download it from the following link:
+- If you want to get the predictions for further analysis, you can use the following script:
+
+```bash
+python run_test_save_output.py
+```
+
+Then you can use the results to compare the performance of the models and calculate metrics, using the notebook provided in the repository with the name `predictions_analysis_distributions.ipynb`
+
+These scripts will output the MAE, RMSE and R2 for the MAE model and the XGBoost model, comparing the performance. To use the XGBoost model, you need to have the XGBoost model checkpoint files. You can download it from the following link:
 
 [XGBoost Checkpoints](https://drive.google.com/drive/folders/1EGJlWUqcQpV46G2_R0LxxdZ-saDlzeNC?usp=sharing)
+
+### Carbon Footprint
+
+We have also included a script to calculate the carbon footprint of the model during inference for a batch size of 1, 32, and 64 compared to the XGBoost model. You can run the following script:
+
+```bash
+carbon_calculation.py
+```
 
 ## Notebook Demos
 
