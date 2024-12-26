@@ -10,6 +10,7 @@ images/
 
 # Don't ignore CSV files in the dictionary results
 !results/*.csv
+!carbon footprint/*.csv
 
 # macOS
 .DS_Store
