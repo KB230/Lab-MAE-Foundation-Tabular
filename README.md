@@ -63,7 +63,7 @@ This script will train the model on the provided dataset, saving the model weigh
 
 If you want to use the model pre-trained on over 1.4M data points from MIMIC, you need the checkpoint file and normalization parameters. You can download them from the following link:
 
-[Lab-MAE Checkpoint](https://drive.google.com/drive/folders/1i_hdYGcB0mi0L8BJTYSI4VU-GKSaQIAo?usp=sharing)
+[Anonymous Lab-MAE Checkpoint](https://drive.google.com/drive/folders/1oPbTJo4UxuK5lQxGGcj7Onj4DXwO6ZGr?usp=sharing)
 
 Download the files and place them in your checkpoint directory. 
 
@@ -108,7 +108,7 @@ Then you can use the results to compare the performance of the models and calcul
 
 These scripts will output the MAE, RMSE and R2 for the MAE model and the XGBoost model, comparing the performance. To use the XGBoost model, you need to have the XGBoost model checkpoint files. You can download it from the following link:
 
-[XGBoost Checkpoints](https://drive.google.com/drive/folders/1EGJlWUqcQpV46G2_R0LxxdZ-saDlzeNC?usp=sharing)
+[Anonymous XGBoost Checkpoints](https://drive.google.com/drive/folders/1oPbTJo4UxuK5lQxGGcj7Onj4DXwO6ZGr?usp=sharing)
 
 ### Carbon Footprint
 
@@ -132,7 +132,7 @@ Contributions are welcome! Please feel free to submit a pull request or open an 
 
 ### Contact
 
-If you have any questions or need further assistance, please feel free to contact me at davidres@mit.edu
+If you have any questions or need further assistance, please feel free to contact me at anonymous@email.com
 
 ## License
 

@@ -8,7 +8,6 @@ from codecarbon import EmissionsTracker, OfflineEmissionsTracker
 
 # Define locations, including latitude and longitude for Popayán, Colombia
 locations = {
-    #"South America - Popayán, Colombia": {"geo_location": True},
     "South America - Popayán, Colombia": {"country_iso_code": "COL", "region": "Cauca"},
     "North America - Cambridge, MA, USA": {"country_iso_code": "USA", "region": "Massachusetts"},
     "Europe - Paris, France": {"country_iso_code": "FRA", "region": "Ile-de-France"},
