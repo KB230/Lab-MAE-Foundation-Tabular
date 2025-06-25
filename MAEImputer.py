@@ -378,6 +378,8 @@ class ReMaskerStep:
 
         return M * np.nan_to_num(X_raw.cpu()) + (1 - M) * imputed_data
     
+    
+    ### I am modifying this function. Please don't forget.  
     def extract_embeddings(self, X_raw: pd.DataFrame, eval_batch_size=None):
         
         no = X_raw.shape[0]
@@ -408,21 +410,29 @@ class ReMaskerStep:
         self.model.eval()
 
         # generate the embeddings
-        embeddings_list = []
+        # embeddings_list = []
+        feature_embeddings_list = []
+        cls_embeddings_list = []
         with torch.no_grad():
             for sample, mask in dataloader:
                 sample = sample.unsqueeze(1)
                 sample.to(self.device)
                 mask.to(self.device)
-                embedding_batch, _ = self.model.extract_embeddings(sample, mask, mask_ratio=0.0)
+                feature_embedding_batch, cls_embedding_batch = self.model.extract_embeddings(sample, mask, mask_ratio=0.0)
                 #embeddings = embeddings.squeeze(dim=2)
-                embeddings_list.append(embedding_batch)
+                feature_embeddings_list.append(feature_embedding_batch)
+                cls_embeddings_list.append(cls_embedding_batch)
 
-        embeddings = torch.cat(embeddings_list, 0)
 
-        embeddings = embeddings.detach().cpu()
+        feature_embeddings = torch.cat(feature_embeddings_list, 0)
+        cls_embeddings = torch.cat(cls_embeddings_list, 0)
+
+
+        feature_embeddings = feature_embeddings.detach().cpu()
+        cls_embeddings = cls_embeddings.detach().cpu()
+
         
-        return embeddings
+        return feature_embeddings, cls_embeddings
 
 
     def fit_transform(self, X: torch.Tensor) -> torch.Tensor:

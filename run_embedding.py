@@ -6,11 +6,36 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import pickle
 from math import sqrt
 import os
+import torch
 
+'''
 ################ Read Dataset ################
 df_test = pd.read_csv('../data/X_test.csv')
 print(f'Test values shape: {df_test.shape}')
+'''
 
+# ======================= DEVELOPMENT SWITCH =======================
+# Set to a number (e.g., 5000) to run on a small subset for fast testing.
+# Set to None to run on the entire file.
+DEV_MODE_ROWS = 10000 
+# ==================================================================
+
+# --- Configuration ---
+CHUNK_SIZE = 2048 # A good chunk size for your 32GB RAM system
+save_path = '100_Labs_Train_0.25Mask_L_V3'
+input_data_path = '../data/X_test.csv'
+eval_batch_size = 256 # Batch size for inference
+
+# --- Load initial data ---
+print("Loading initial data...")
+if DEV_MODE_ROWS:
+    print(f"--- DEV MODE: Processing only the first {DEV_MODE_ROWS} rows. ---")
+    df_test = pd.read_csv(input_data_path, nrows=DEV_MODE_ROWS)
+else:
+    print("--- PRODUCTION MODE: Processing the full dataset. ---")
+    df_test = pd.read_csv(input_data_path)
+
+print(f'Test values shape: {df_test.shape}')
 
 ################ Clean Missing Data ################
 def clean_missing(df, threshold=20 + 3, missing_per_col=100, cols_to_remove=None):
@@ -42,10 +67,9 @@ def clean_missing(df, threshold=20 + 3, missing_per_col=100, cols_to_remove=None
     
     return df, cols_to_remove
 
-missing_per_row = 20 + 3 # + 3 because of: first_race, chartyear, hadm_id
-missing_per_col = 500
-
-df_test, _ = clean_missing(df_test, missing_per_row, cols_to_remove=[])
+print("Cleaning data and removing rows with excessive missing values...")
+df_test, _ = clean_missing(df_test, threshold=20 + 3, missing_per_col=500, cols_to_remove=[])
+print(f'Shape after cleaning: {df_test.shape}') # This will now show the smaller number (e.g., 9661)
 
 
 # Create a list of columns to ignore
@@ -57,7 +81,7 @@ columns = df_test.shape[1] - 3 # + 3 because of: first_race, chartyear, hadm_id
 mask_ratio = 0.25
 max_epochs = 300
 save_path = '100_Labs_Train_0.25Mask_L_V3'
-weigths = '100_Labs_Train_0.25Mask_L_V3/epoch390_checkpoint'
+weigths = '100_Labs_Train_0.25Mask_L_V3/model_checkpoint.zip'
 
 
 batch_size=256 
@@ -78,7 +102,40 @@ with open('100_Labs_Train_0.25Mask_L_V3/norm_parameters.pkl', 'rb') as file:
     
 imputer.norm_parameters = loaded_norm_parameters
 
+###### Extract Embeddings with Batch-Processing #######
+print("Extracting embeddings...")
+input_df = df_test.drop(columns=['first_race', 'chartyear', 'hadm_id'])
+# Call the function once. It will loop through the data in batches for us.
+# It now returns two values, thanks to our fix in Step 1.
+final_feature_embeddings_t, final_cls_embeddings_t = imputer.extract_embeddings(
+    X_raw=input_df, 
+    eval_batch_size=eval_batch_size
+)
 
+
+# Convert the final tensors to numpy arrays
+final_feature_embeddings = final_feature_embeddings_t.numpy()
+final_cls_embeddings = final_cls_embeddings_t.numpy()
+
+print(f"Final feature embeddings shape: {final_feature_embeddings.shape}")
+print(f"Final CLS (row) embeddings shape: {final_cls_embeddings.shape}")
+
+# --- Save the outputs ---
+file_suffix = '_dev' if DEV_MODE_ROWS else ''
+feature_embedding_path = os.path.join(save_path, f'test_feature_embeddings{file_suffix}.npy')
+cls_embedding_path = os.path.join(save_path, f'test_cls_embeddings{file_suffix}.npy')
+ids_path = os.path.join(save_path, f'test_ids{file_suffix}.csv')
+
+print(f"Saving feature embeddings to {feature_embedding_path}")
+np.save(feature_embedding_path, final_feature_embeddings)
+print(f"Saving CLS embeddings to {cls_embedding_path}")
+np.save(cls_embedding_path, final_cls_embeddings)
+print(f"Saving IDs to {ids_path}")
+df_test[['hadm_id']].to_csv(ids_path, index=False)
+
+print("Script finished successfully.")
+
+'''
 ################ Extract embeddings ################
 
 eval_batch_size = 256
@@ -108,3 +165,4 @@ for i, index in enumerate(embeddings_df.index):
 
 
 embeddings_df.to_csv(os.path.join(save_path, 'embeddings_test.csv'), index=False)
+'''
