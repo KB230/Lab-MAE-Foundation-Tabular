@@ -140,14 +140,14 @@ class MaskedAutoencoder(nn.Module):
         # MAE encoder specifics
         
         if encode_func == 'active':
-            self.mask_embed = ActiveEmbed(rec_len, embed_dim)
+            self.mask_embed = ActiveEmbed(rec_len, embed_dim) # takes raw numbers and projects to higher dimensionality vector
         else:
             self.mask_embed = MaskEmbed(rec_len, embed_dim)
         
         self.rec_len = rec_len
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        self.pad_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        self.pos_embed = nn.Parameter(torch.zeros(1, rec_len + 1, embed_dim), requires_grad=False)  
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim)) #classification vector
+        self.pad_token = nn.Parameter(torch.zeros(1, 1, embed_dim)) 
+        self.pos_embed = nn.Parameter(torch.zeros(1, rec_len + 1, embed_dim), requires_grad=False)   #positional embedding -- what is the position of the lab-value
         
         self.blocks = nn.ModuleList([
             Block(embed_dim, num_heads, mlp_ratio, qkv_bias=True, norm_layer=norm_layer)
@@ -161,7 +161,7 @@ class MaskedAutoencoder(nn.Module):
         # MAE decoder specifics
         self.decoder_embed = nn.Linear(embed_dim, decoder_embed_dim, bias=True)
 
-        self.mask_token = nn.Parameter(torch.zeros(1, 1, decoder_embed_dim))
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, decoder_embed_dim)) #place holder for redacted values (mask)
 
         self.decoder_pos_embed = nn.Parameter(torch.zeros(1, rec_len + 1, decoder_embed_dim), requires_grad=False)  # fixed sin-cos embedding
 
@@ -170,7 +170,7 @@ class MaskedAutoencoder(nn.Module):
             for i in range(decoder_depth)])
 
         self.decoder_norm = norm_layer(decoder_embed_dim)
-        self.decoder_pred = nn.Linear(decoder_embed_dim, 1, bias=True)  # decoder to patch
+        self.decoder_pred = nn.Linear(decoder_embed_dim, 1, bias=True)  # decoder to patch -- predicts value for each lab test
         
         # --------------------------------------------------------------------------
 
@@ -265,14 +265,14 @@ class MaskedAutoencoder(nn.Module):
             
         return x_masked, mask, nask, ids_restore, attn_mask
 
-
-    def forward_encoder(self, x, m, mask_ratio=0.5, exclude_columns=[]):
+    # IMPORTANT! what is the data? comes here...
+    def forward_encoder(self, x, m, mask_ratio=0.5, exclude_columns=[]): #Input: x (tensor of lab values), m (tensor indicating which are present vs. missing)
         
         # embed patches
-        x = self.mask_embed(x)
+        x = self.mask_embed(x) # convert raw lab value into vector
 
         # add pos embed w/o cls token
-        x = x + self.pos_embed[:, 1:, :]    
+        x = x + self.pos_embed[:, 1:, :] # add positional information
         
         #print(x.shape)
         
@@ -286,7 +286,7 @@ class MaskedAutoencoder(nn.Module):
         # append cls token
         cls_token = self.cls_token + self.pos_embed[:, :1, :]
         cls_tokens = cls_token.expand(x.shape[0], -1, -1)
-        x = torch.cat((cls_tokens, x), dim=1)
+        x = torch.cat((cls_tokens, x), dim=1) 
         
         attn_mask = torch.cat((torch.ones(attn_mask.shape[0], 1, device=x.device), attn_mask), dim=1)
         
@@ -302,7 +302,7 @@ class MaskedAutoencoder(nn.Module):
 
         x = self.norm(x)
 
-        return x, mask, nask, ids_restore, attn_mask
+        return x, mask, nask, ids_restore, attn_mask #return final embeddings (latent), and info to unscramble (ids-restore)
 
 
     def forward_decoder(self, x, ids_restore):
@@ -336,7 +336,7 @@ class MaskedAutoencoder(nn.Module):
         return x
 
 
-    def forward_loss(self, data, pred, mask, nask):
+    def forward_loss(self, data, pred, mask, nask): # loss function comparing predictions to original data for only masked parts
         """
         data: [N, 1, L]
         pred: [N, L]
@@ -358,7 +358,7 @@ class MaskedAutoencoder(nn.Module):
         return loss
 
     
-    def forward(self, data, miss_idx, mask_ratio=0.5, exclude_columns=[]):
+    def forward(self, data, miss_idx, mask_ratio=0.5, exclude_columns=[]): # runs encoder than decoder
         
         latent, mask, nask, ids_restore, _ = self.forward_encoder(data, miss_idx, mask_ratio, exclude_columns)
         pred = self.forward_decoder(latent, ids_restore) 
@@ -443,3 +443,35 @@ if __name__ == '__main__':
     
     X = X.unsqueeze(dim=1)
     print(model.forward(X, M, 0.75))
+
+
+# Add this new class at the bottom of MAE.py
+
+class MaskedAutoencoder_NoPos(MaskedAutoencoder):
+    """
+    An ablation model that is identical to the original MaskedAutoencoder
+    but purposefully DOES NOT add positional embeddings. Used to evaluate
+    the contribution of positional information.
+    """
+    def forward_encoder(self, x, m, mask_ratio=0.5, exclude_columns=[]):
+        # embed patches
+        x = self.mask_embed(x)
+
+        # --- THE ONLY CHANGE IS HERE ---
+        # The line that adds positional embeddings is commented out.
+        # x = x + self.pos_embed[:, 1:, :]    
+        
+        # The rest of the function is identical to the original
+        x, mask, nask, ids_restore, attn_mask = self.random_masking(x, m, mask_ratio, exclude_columns)
+        
+        cls_token = self.cls_token + self.pos_embed[:, :1, :] # CLS token still gets its position
+        cls_tokens = cls_token.expand(x.shape[0], -1, -1)
+        x = torch.cat((cls_tokens, x), dim=1)
+        
+        attn_mask = torch.cat((torch.ones(attn_mask.shape[0], 1, device=x.device), attn_mask), dim=1)
+        
+        for blk in self.blocks:
+            x = blk(x, attn_mask=attn_mask)
+
+        x = self.norm(x)
+        return x, mask, nask, ids_restore, attn_mask

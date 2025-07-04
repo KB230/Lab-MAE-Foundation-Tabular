@@ -10,82 +10,81 @@ DEV_MODE_ROWS = 500000
 
 
 # --- Step 1: Load and Filter ---
-# We use the DEV_MODE_ROWS switch here.
-cols_to_load = ['patientunitstayid', 'labname', 'labresult', 'labresultoffset']
+cols_to_load = ['patientunitstayid', 'labname', 'labresult', 'labresultoffset'] # Assumes labresult offset is the time
 
 if DEV_MODE_ROWS:
     print(f"--- DEV MODE: Loading only the first {DEV_MODE_ROWS} rows for testing. ---")
     df_lab = pd.read_csv('../eICU-data/lab.csv', usecols=cols_to_load, nrows=DEV_MODE_ROWS)
 else:
-    print("--- PRODUCTION MODE: Loading the full dataset. This may take a while... ---")
+    print("--- PRODUCTION MODE: Loading the full dataset. ---")
     df_lab = pd.read_csv('../eICU-data/lab.csv', usecols=cols_to_load)
 
 
-# Curation Step
-TOP_N_LABS = 100
+
+TOP_N_LABS = 100 # just to test the training
 top_labs = df_lab['labname'].value_counts().nlargest(TOP_N_LABS).index.tolist()
-print(f"Top {TOP_N_LABS} labs selected.")
 df_filtered = df_lab[df_lab['labname'].isin(top_labs)].copy()
 
-# Initial Cleaning
 df_filtered['labresult'] = pd.to_numeric(df_filtered['labresult'], errors='coerce')
 df_filtered = df_filtered[df_filtered['labresult'] >= 0]
 assert isinstance(df_filtered, pd.DataFrame)
 df_filtered.dropna(subset=['labresult', 'labresultoffset'], inplace=True)
 
+# --- Step 2: Aggregate by Day ---
+# Create a 'day_number' based on the offset (1440 minutes = 24 hours)
+df_filtered['day_number'] = df_filtered['labresultoffset'] // 1440
 
-# --- Step 2: Find First and Follow-up Values using rank() ---
-print("Ranking events to find first and follow-up tests...")
-df_filtered.sort_values(['patientunitstayid', 'labname', 'labresultoffset'], inplace=True)
-df_filtered['time_rank'] = df_filtered.groupby(['patientunitstayid', 'labname'])['labresultoffset'].rank(method='first', ascending=True)
+print("Aggregating lab events into daily averages...")
+# Group by patient, day, and lab test, and calculate the mean for that day.
 
-df_first = df_filtered[df_filtered['time_rank'] == 1.0].copy()
-df_followup = df_filtered[df_filtered['time_rank'] == 2.0].copy()
+daily_agg = df_filtered.groupby(['patientunitstayid', 'day_number', 'labname']).agg(
+    labresult=('labresult', 'mean'),
+    labresultoffset=('labresultoffset', 'mean')
+).reset_index()
+
+# Sort to ensure the 'shift' operation works correctly within each patient's timeline
+daily_agg.sort_values(['patientunitstayid', 'day_number'], inplace=True)
+
+# For each patient, pull up the data from the next day (-1 means shift up by 1 row)
+daily_agg['labresult_last'] = daily_agg.groupby('patientunitstayid')['labresult'].shift(-1)
+daily_agg['labresultoffset_last'] = daily_agg.groupby('patientunitstayid')['labresultoffset'].shift(-1)
+
+# At this point, the last day for each patient will have NaN for the 'last' columns, which is correct.
 
 
-# --- Step 3: Pivot the DataFrames ---
-print("Pivoting data to create wide format...")
-df_val_first = df_first.pivot_table(index='patientunitstayid', columns='labname', values='labresult')
-df_time_first = df_first.pivot_table(index='patientunitstayid', columns='labname', values='labresultoffset')
-df_val_followup = df_followup.pivot_table(index='patientunitstayid', columns='labname', values='labresult')
-df_time_followup = df_followup.pivot_table(index='patientunitstayid', columns='labname', values='labresultoffset')
+# --- Step 4: Pivot into Final Wide Format ---
+print("Pivoting data into the final wide format...")
+# Now we can do a single, powerful pivot
+df_pivoted = daily_agg.pivot_table(
+    index=['patientunitstayid', 'day_number'],
+    columns='labname',
+    values=['labresult', 'labresultoffset', 'labresult_last', 'labresultoffset_last']
+)
 
+# --- Step 5: Flatten and Rename Columns ---
+# The pivot creates multi-level columns, e.g., ('labresult', 'potassium'). We flatten them.
+print("Flattening and renaming columns...")
+df_pivoted.columns = [f'{val_type}_{lab_name}' for val_type, lab_name in df_pivoted.columns]
+# Rename 'labresult' to 'npval' and 'labresultoffset' to 'nptime' to match original format
+df_pivoted.columns = df_pivoted.columns.str.replace('labresult_last', 'npval_last')
+df_pivoted.columns = df_pivoted.columns.str.replace('labresult', 'npval')
+df_pivoted.columns = df_pivoted.columns.str.replace('labresultoffset_last', 'nptime_last')
+df_pivoted.columns = df_pivoted.columns.str.replace('labresultoffset', 'nptime')
 
-# --- Step 4: Apply Quantile Normalization ---
+# --- Step 6: Apply Quantile Normalization ---
 print("Applying Quantile Normalization...")
+# We only want to normalize the value columns, not the time columns
+val_cols = [col for col in df_pivoted.columns if 'npval' in col]
 qt = QuantileTransformer(output_distribution='normal', n_quantiles=1000, random_state=42)
+df_pivoted[val_cols] = qt.fit_transform(df_pivoted[val_cols])
 
-if not df_val_first.empty:
-    df_val_first[:] = qt.fit_transform(df_val_first)
-if not df_val_followup.empty:
-    df_val_followup[:] = qt.fit_transform(df_val_followup)
+# --- Step 7: Save the Final Data ---
+# Reset index to make patientid and day_number regular columns for saving
+df_final = df_pivoted.reset_index()
 
-
-# --- Step 5: Combine, Rename, and Reorder ---
-print("Combining, renaming, and saving final data...")
-df_val_first.columns = ['npval_' + str(col) for col in df_val_first.columns]
-df_time_first.columns = ['nptime_' + str(col) for col in df_time_first.columns]
-df_val_followup.columns = ['npval_last_' + str(col) for col in df_val_followup.columns]
-df_time_followup.columns = ['nptime_last_' + str(col) for col in df_time_followup.columns]
-
-df_final = pd.concat([df_val_first, df_time_first, df_val_followup, df_time_followup], axis=1)
-
-interleaved_cols = []
-for lab in top_labs:
-    col_map = {
-        'val': f'npval_{lab}', 'time': f'nptime_{lab}',
-        'val_last': f'npval_last_{lab}', 'time_last': f'nptime_last_{lab}'
-    }
-    for col in col_map.values():
-        if col in df_final.columns:
-            interleaved_cols.append(col)
-
-df_final = df_final[interleaved_cols]
-
-# We can also add a suffix to the output file to avoid confusion
-file_suffix = '_dev' if DEV_MODE_ROWS else ''
+file_suffix = '_daily_dev' if DEV_MODE_ROWS else '_daily'
 output_filename = f'X_train_eICU{file_suffix}.csv'
-df_final.to_csv(output_filename)
+df_final.to_csv(output_filename, index=False) # index=False because IDs are now columns
 
 print(f"\nPreprocessing complete! Saved to {output_filename}")
 print("Final data shape:", df_final.shape)

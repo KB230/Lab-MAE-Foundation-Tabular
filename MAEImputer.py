@@ -237,7 +237,8 @@ class ReMaskerStep:
 
             total_loss = (total_loss / (iter + 1)) ** 0.5
             
-            
+            '''
+            Commented out Validation to speed up training process
             ############ Validation ############
             self.model.eval()
             eight_str = str(eight)
@@ -312,6 +313,7 @@ class ReMaskerStep:
                     results_df.to_csv(results_csv_path, index=False)  # Include header
                 else:
                     results_df.to_csv(results_csv_path, mode='a', header=False, index=False)  # Append without header
+                '''
 
           
             if (epoch + 1) % 10 == 0 or epoch == 0:
@@ -412,7 +414,7 @@ class ReMaskerStep:
         # generate the embeddings
         # embeddings_list = []
         feature_embeddings_list = []
-        cls_embeddings_list = []
+        cls_embeddings_list = [] # (classification embeddings)
         with torch.no_grad():
             for sample, mask in dataloader:
                 sample = sample.unsqueeze(1)

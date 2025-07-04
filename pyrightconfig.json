@@ -1,0 +1,6 @@
+{
+  "pythonVersion": "3.9", // or your actual Python version
+  "pythonPlatform": "Linux", // or "Windows" / "Darwin" as needed
+  "pythonPath": "/home/aklinux/anaconda3/envs/labmae/bin/python",
+
+}
