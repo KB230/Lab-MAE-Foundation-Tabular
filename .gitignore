@@ -90,3 +90,17 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# claude readme 
+CLAUDE.md 
+# model files 
+checkpoint.pt 
+model_checkpoint.zip 
+
+# result folders 
+order_abnormality_experiment/full_results/
+order_abnormality_experiment/full_results_group/
+order_abnormality_experiment/results_expanded/
+order_abnormality_experiment/results_group/
+order_abnormality_experiment/results_group_ordered_majority/
+

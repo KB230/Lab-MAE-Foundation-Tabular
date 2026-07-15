@@ -10,21 +10,105 @@ import torch
 
 EXPERIMENT_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = EXPERIMENT_DIR.parent
-REPO_DIR = PROJECT_DIR.parent
 sys.path.insert(0, str(PROJECT_DIR))
 
 
-# Labs where we already have a simple normal/abnormal definition.
-# Keys are MIMIC lab item IDs used in columns like npval_50971.
+# Normal ranges for all panel labs. Keys are MIMIC lab item IDs (npval_<id> columns).
+# Labs normally absent use (0.0, 0.0): any detected value is flagged abnormal.
+# Excluded: Anion Gap (50868) — calculated value; Atypical Lymphocytes (51143) — qualitative;
+#   PEEP/Tidal Volume/FiO2 (50819/50826/50816) — machine settings; Tacrolimus (50986) /
+#   Vancomycin (51009) — drug levels with indication-specific therapeutic ranges;
+#   H/I/L (50934/50947/51678) — undocumented; urine panels — different reference context.
+# Labs not present as npval_last_* in X_test.csv are filtered out automatically at runtime.
 NORMAL_RANGES = {
-    50882: ("Bicarbonate", 23.0, 28.0),
-    50912: ("Creatinine", 0.7, 1.3),
-    50971: ("Potassium", 3.5, 5.0),
-    50983: ("Sodium", 136.0, 145.0),
-    51006: ("Urea Nitrogen", 8.0, 20.0),
-    51222: ("Hemoglobin", 12.0, 18.0),
-    51265: ("Platelet Count", 150.0, 450.0),
-    51301: ("White Blood Cells", 4.0, 11.0),
+    # BMP (Basic Metabolic Panel)
+    50882: ("Bicarbonate",                23.0,  28.0),
+    50893: ("Calcium Total",               8.5,  10.5),
+    50902: ("Chloride",                   98.0, 107.0),
+    50912: ("Creatinine",                  0.7,   1.3),
+    50931: ("Glucose",                    70.0, 140.0),
+    50971: ("Potassium",                   3.5,   5.0),
+    50983: ("Sodium",                    136.0, 145.0),
+    51006: ("Urea Nitrogen",               8.0,  20.0),
+    # CBC (Complete Blood Count)
+    51221: ("Hematocrit",                 36.0,  50.0),
+    51222: ("Hemoglobin",                 12.0,  18.0),
+    51248: ("MCH",                        27.0,  33.0),
+    51249: ("MCHC",                       31.5,  35.7),
+    51250: ("MCV",                        80.0, 100.0),
+    51265: ("Platelet Count",            150.0, 450.0),
+    51277: ("RDW",                        11.5,  14.5),
+    51279: ("Red Blood Cells",             4.2,   5.9),
+    51301: ("White Blood Cells",           4.0,  11.0),
+    52172: ("RDW-SD",                     39.0,  46.0),
+    51133: ("Absolute Lymphocyte Count",   1.0,   4.8),
+    51144: ("Bands",                       0.0,   5.0),
+    51146: ("Basophils",                   0.0,   1.0),
+    51200: ("Eosinophils",                 0.0,   7.0),
+    51244: ("Lymphocytes",                20.0,  40.0),
+    51251: ("Metamyelocytes",              0.0,   0.0),
+    51254: ("Monocytes",                   2.0,  10.0),
+    51255: ("Myelocytes",                  0.0,   0.0),
+    51256: ("Neutrophils",                50.0,  70.0),
+    51257: ("Nucleated Red Cells",         0.0,   0.0),
+    52069: ("Absolute Basophil Count",     0.0,   0.1),
+    52073: ("Absolute Eosinophil Count",   0.0,   0.5),
+    52074: ("Absolute Monocyte Count",     0.2,   0.9),
+    52075: ("Absolute Neutrophil Count",   1.8,   7.7),
+    52135: ("Immature Granulocytes",       0.0,   0.0),
+    # LFT (Liver Function Tests)
+    50861: ("ALT",                         7.0,  56.0),
+    50862: ("Albumin",                     3.5,   5.0),
+    50863: ("Alkaline Phosphatase",       44.0, 147.0),
+    50878: ("AST",                        10.0,  40.0),
+    50884: ("Bilirubin Indirect",          0.1,   0.8),
+    50885: ("Bilirubin Total",             0.2,   1.2),
+    # Coagulation Panel
+    51214: ("Fibrinogen",                200.0, 400.0),
+    51237: ("INR",                         0.8,   1.2),
+    51274: ("PT",                         11.0,  15.0),
+    51275: ("PTT",                        25.0,  35.0),
+    # Blood Gas (ABG/VBG) — machine settings (50816/50819/50826) excluded
+    50802: ("Base Excess",                -2.0,   2.0),
+    50804: ("Calculated Total CO2",       22.0,  29.0),
+    50806: ("Chloride Whole Blood",       98.0, 107.0),
+    50808: ("Free Calcium",                1.15,  1.35),
+    50809: ("Glucose Blood Gas",          70.0, 140.0),
+    50810: ("Hematocrit Calculated",      36.0,  50.0),
+    50811: ("Hemoglobin Blood Gas",       12.0,  18.0),
+    50813: ("Lactate",                     0.5,   2.0),
+    50817: ("Oxygen Saturation",          95.0, 100.0),
+    50818: ("pCO2",                       35.0,  45.0),
+    50820: ("pH",                          7.35,  7.45),
+    50821: ("pO2",                        80.0, 100.0),
+    50822: ("Potassium Whole Blood",       3.5,   5.0),
+    50824: ("Sodium Whole Blood",        136.0, 145.0),
+    50825: ("Temperature",                36.5,  37.5),
+    # Electrolytes add-on
+    50960: ("Magnesium",                   1.7,   2.2),
+    50970: ("Phosphate",                   2.5,   4.5),
+    # Creatine Kinase
+    50910: ("Creatine Kinase",            30.0, 200.0),
+    50911: ("Creatine Kinase MB",          0.0,   5.0),
+    # Lactate Dehydrogenase
+    50954: ("Lactate Dehydrogenase",     135.0, 225.0),
+    # Troponin-T
+    51003: ("Troponin T",                  0.0,   0.01),
+    # Iron Studies
+    50924: ("Ferritin",                   12.0, 300.0),
+    50952: ("Iron",                       60.0, 170.0),
+    50953: ("Iron Binding Capacity",     240.0, 360.0),
+    50998: ("Transferrin",               170.0, 370.0),
+    # Pancreatic Enzymes
+    50867: ("Amylase",                    30.0, 110.0),
+    50956: ("Lipase",                      7.0,  60.0),
+    # Other targeted labs
+    50852: ("Hemoglobin A1c",              4.0,   5.6),
+    50889: ("C-Reactive Protein",          0.0,   1.0),
+    50993: ("Thyroid Stimulating Hormone", 0.5,   4.5),
+    51000: ("Triglycerides",               0.0, 150.0),
+    50964: ("Osmolality",                280.0, 300.0),
+    51007: ("Uric Acid",                   2.5,   7.0),
 }
 
 ID_COLS = ["first_race", "chartyear", "hadm_id"]
@@ -34,13 +118,16 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Build lab ordering/abnormality dataset using current-row Lab-MAE embeddings."
     )
-    parser.add_argument("--input", default=str(REPO_DIR / "data" / "X_test.csv"))
+    parser.add_argument("--input", default=str(PROJECT_DIR / "data" / "X_test.csv"))
     parser.add_argument("--output", default=str(EXPERIMENT_DIR / "data" / "order_abnormality_dataset.csv"))
     parser.add_argument("--summary-output", default=str(EXPERIMENT_DIR / "data" / "order_abnormality_summary.csv"))
-    parser.add_argument("--save-path", default=str(PROJECT_DIR / "100_Labs_Train_0.25Mask_L_V3"))
-    parser.add_argument("--weights", default=str(PROJECT_DIR / "100_Labs_Train_0.25Mask_L_V3" / "epoch390_checkpoint"))
-    parser.add_argument("--norm-parameters", default=str(PROJECT_DIR / "100_Labs_Train_0.25Mask_L_V3" / "norm_parameters.pkl"))
-    parser.add_argument("--max-rows", type=int, default=5000)
+    parser.add_argument("--save-path", default=str(PROJECT_DIR / "epoch390_checkpoint"))
+    parser.add_argument("--weights", default=str(PROJECT_DIR / "model_checkpoint.zip"))
+    parser.add_argument("--norm-parameters", default=str(PROJECT_DIR / "norm_parameters.pkl"))
+    parser.add_argument("--max-rows", type=int, default=None,
+                        help="Stop after this many input rows. Omit to process the full file.")
+    parser.add_argument("--chunk-size", type=int, default=5000,
+                        help="Rows read from CSV at a time. Controls peak RAM usage.")
     parser.add_argument("--min-current-observed", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument(
@@ -206,71 +293,67 @@ def main():
     output_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # load the test dataset
-    print(f"Reading {input_path}...")
-    df = pd.read_csv(input_path)
-    if args.max_rows:
-        df = df.head(args.max_rows)
-    print(f"Input shape after row limit: {df.shape}")
-
-    # Get lab items and time
-    model_cols = [col for col in df.columns if col not in ID_COLS]
-    # Get current-value columns (npval_*) that are not next-day (npval_last_*)
+    # Read only the header to get column layout without loading the full file.
+    header_df = pd.read_csv(input_path, nrows=0)
+    model_cols = [col for col in header_df.columns if col not in ID_COLS]
     current_value_cols = [
         col for col in model_cols if col.startswith("npval_") and "_last_" not in col
     ]
-    # Get columns where we have a normal range defined
-    target_itemids = get_target_itemids(df)
-    print(f"Target labs with ranges and current/last columns: {target_itemids}")
+    target_itemids = get_target_itemids(header_df)
+    print(f"Target labs: {target_itemids}")
+    print(f"Model columns: {len(model_cols)}")
 
-    # Get dataset masking next day values to avoid data leakage.
-    X_current = make_model_input(df, model_cols)
-
-    # Build the dataset with one row per patient-lab pair, including current value, next-day value, and abnormality label.
-    # e.g.
-    # source_row | hadm_id  | chartyear | current_observed | lab_itemid | lab_name | current_lab_value | current_lab_time | ordered | abnormal | next_lab_value | next_lab_time | normal_low | normal_high | Embedding_row
-    #0          | 1234      | 2008      | 5                | 50971      | Potassium | 4.2               | 2008-01-01 08:00 | 1       | 0        | 4.5            | 2008-01-02 08:00 | 3.5        | 5.0.    | [0,2, 12, 3, -1]
-    #1          | 12345     | 2008      | 5                | 50983      | Sodium    | 140.0             | 2008-01-01 08:00 | 1       | 1        | 130.0          | 2008-01-02 08:00 | 136.0      | 145.0
-    #2          | 67890     | 2009      | 3                | 51222      | Hemoglobin | 13.5             | 2009-02-01 09:00 | 0       | NaN      | NaN            | NaN             | 12.0        | 18.0
-    meta = build_labels(
-        df=df,
-        target_itemids=target_itemids,
-        current_value_cols=current_value_cols,
-        min_current_observed=args.min_current_observed,
-    )
-
-    if meta.empty:
-        raise RuntimeError("No eligible rows were created.")
-
-    # Filter the data to keep only these patients where we have at least one eligible lab row
-    used_source_rows = meta["source_row"].drop_duplicates().to_numpy()
-    X_current = X_current.loc[used_source_rows].reset_index(drop=True)
-    source_to_embedding_row = {
-        source_row: i for i, source_row in enumerate(used_source_rows)
-    }
-    meta["embedding_row"] = meta["source_row"].map(source_to_embedding_row)
-
-    print(f"Embedding rows: {X_current.shape}; long label rows: {meta.shape}")
-
-    if args.skip_embeddings:
-        print("Skipping Lab-MAE embedding extraction.")
-        out = meta.drop(columns=["embedding_row"])
-    else:
-        # Compute the embeddings for the current lab values using Lab-MAE, and pool them into a single row-level embedding z.
+    # Load the imputer once before the chunk loop.
+    if not args.skip_embeddings:
         imputer = load_imputer(args, dim=len(model_cols))
         print("Extracting and pooling Lab-MAE embeddings...")
-        # Calculate embeddings and return a single embedding per row by pooling observed current lab embeddings.
-        z = pooled_embeddings(imputer, X_current, args.batch_size)
-        z_cols = [f"z_{i}" for i in range(z.shape[1])]
-        z_df = pd.DataFrame(z, columns=z_cols)
-        z_df["embedding_row"] = np.arange(len(z_df))
-        out = meta.merge(z_df, on="embedding_row", how="left")
-        out = out.drop(columns=["embedding_row"])
 
-    out.to_csv(output_path, index=False)
+    first_chunk = True
+    rows_processed = 0
 
+    for chunk_df in pd.read_csv(input_path, chunksize=args.chunk_size):
+        if args.max_rows is not None and rows_processed >= args.max_rows:
+            break
+        if args.max_rows is not None:
+            chunk_df = chunk_df.head(args.max_rows - rows_processed)
+
+        # Shift index so source_row is globally unique across chunks.
+        chunk_df.index = range(rows_processed, rows_processed + len(chunk_df))
+
+        X_current = make_model_input(chunk_df, model_cols)
+        meta = build_labels(chunk_df, target_itemids, current_value_cols, args.min_current_observed)
+
+        if meta.empty:
+            rows_processed += len(chunk_df)
+            continue
+
+        used_source_rows = meta["source_row"].drop_duplicates().to_numpy()
+        X_for_embed = X_current.loc[used_source_rows].reset_index(drop=True)
+        source_to_embedding_row = {sr: i for i, sr in enumerate(used_source_rows)}
+        meta["embedding_row"] = meta["source_row"].map(source_to_embedding_row)
+
+        if args.skip_embeddings:
+            out = meta.drop(columns=["embedding_row"])
+        else:
+            z = pooled_embeddings(imputer, X_for_embed, args.batch_size)
+            z_cols = [f"z_{i}" for i in range(z.shape[1])]
+            z_df = pd.DataFrame(z, columns=z_cols)
+            z_df["embedding_row"] = np.arange(len(z_df))
+            out = meta.merge(z_df, on="embedding_row", how="left")
+            out = out.drop(columns=["embedding_row"])
+
+        out.to_csv(output_path, mode="w" if first_chunk else "a", header=first_chunk, index=False)
+        first_chunk = False
+        rows_processed += len(chunk_df)
+        print(f"Processed {rows_processed} rows...")
+
+    if first_chunk:
+        raise RuntimeError("No eligible rows were created.")
+
+    # Compute summary without reloading the z columns.
+    result_df = pd.read_csv(output_path, usecols=["lab_itemid", "lab_name", "ordered", "abnormal"])
     summary = (
-        out.groupby(["lab_itemid", "lab_name"], dropna=False)
+        result_df.groupby(["lab_itemid", "lab_name"], dropna=False)
         .agg(
             rows=("ordered", "size"),
             ordered=("ordered", "sum"),
@@ -282,7 +365,7 @@ def main():
     )
     summary.to_csv(summary_path, index=False)
 
-    print(f"Wrote dataset: {output_path} shape={out.shape}")
+    print(f"Wrote dataset: {output_path}")
     print(f"Wrote summary: {summary_path}")
     print(summary.to_string(index=False))
 
